@@ -1,0 +1,98 @@
+/**
+ * I've set this up to make it possible to use dynamoDB-local for unit tests, based on the advice at
+ * https://stackoverflow.com/questions/34401039/run-dynamodb-local-as-part-of-a-gradle-java-project
+ * gcartine
+ */
+
+buildscript {
+    ext.kotlin_version = '1.2.51'
+
+    repositories {
+        mavenCentral()
+    }
+    dependencies {
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+    }
+}
+
+plugins {
+    id 'java'
+}
+
+group 'rm'
+version '1.0-SNAPSHOT'
+
+apply plugin: 'kotlin'
+
+sourceCompatibility = 1.8
+
+repositories {
+    mavenCentral()
+
+    // for dynamoDB local
+    maven {
+        url 'http://dynamodb-local.s3-website-us-west-2.amazonaws.com/release'
+    }
+}
+
+dependencies {
+    compile "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
+    compile "org.jetbrains.kotlin:kotlin-reflect:$kotlin_version"
+    testCompile group: 'junit', name: 'junit', version: '4.12'
+
+    compile (
+            'com.amazonaws:aws-lambda-java-core:1.1.0',
+            'com.amazonaws:aws-lambda-java-events:1.1.0'
+    )
+
+    // for dynamoDB local
+    testCompile group: 'com.amazonaws', name: 'DynamoDBLocal', version: '1.11.0'
+
+    // for unit testing with spek
+    testCompile "com.nhaarman:mockito-kotlin:1.3.0"
+    testCompile("com.natpryce:hamkrest:1.4.2.2") {
+        exclude group: 'org.jetbrains.kotlin'
+    }
+    testCompile "org.jetbrains.spek:spek-api:1.1.5"
+    testCompile("org.jetbrains.spek:spek-junit-platform-engine:1.1.5")
+    testCompile("org.junit.platform:junit-platform-runner:1.0.0")
+}
+
+compileKotlin {
+    kotlinOptions.jvmTarget = "1.8"
+}
+compileTestKotlin {
+    kotlinOptions.jvmTarget = "1.8"
+}
+
+// builds the zip file for the aws lambda
+task buildZip(type: Zip) {
+    from compileJava
+    from processResources
+    into('lib') {
+        // next line was wrong in AWS tutuorial; it said 'from configurations.compile.Classpath'
+        // note the dot between compile and Classpath
+        from configurations.compileClasspath
+    }
+}
+
+build.dependsOn buildZip
+
+//for dynamoDB local, for unit tests:
+// First, copy native files to a directory:
+task copyNativeDeps(type: Copy) {
+    from (configurations.testCompile) {
+        include "*.dylib"
+        include "*.so"
+        include "*.dll"
+    }
+    into 'build/libs'
+}
+
+//for dynamoDB local, for unit tests:
+// Second, make sure you include this directory (build/libs in our case) in the java library path
+test.dependsOn copyNativeDeps
+test.doFirst {
+    systemProperty "java.library.path", 'build/libs'
+}
+
